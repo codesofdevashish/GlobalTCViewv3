@@ -84,3 +84,14 @@ Look of the videos: `CFG` at the top of `tc3d/render.py`.
 - This is a research visualisation, not a forecast.
 
 The site has light and dark themes (toggle in the top bar). Archived storms without an impact layer get one computed from their saved track (up to 20 a day).
+
+## Forecasts, history and climate (all free, no login)
+
+- **Forecast** (inspector tab, track map, globe): GEFS ensemble members, ensemble mean and GFS from NCEP's
+  cyclone tracker on NOMADS (`scripts/forecast.py`), with links to each basin's official agency. Model guidance only.
+- **History** (inspector tab, track map): IBTrACS v04r01 since 1980 (`scripts/context.py`): storms that passed near
+  the current position at this time of year, how strong they became, and the closest analogs.
+- **Season vs normal and climate state** (Season panel, storm list): named storms and ACE vs 1991-2020 to the same
+  date; ENSO (NOAA CPC ONI), IOD (NOAA PSL DMI), MJO (Australian Bureau of Meteorology RMM) (`scripts/extras.py`).
+- **Infrared** on the globe: Himawari or GOES clean-IR band from NASA GIBS (no free layer covers the western Indian Ocean).
+- **RSS feed** (`feed.xml`), **CSV downloads** of every track and hourly diagnostics, and a **glossary**.

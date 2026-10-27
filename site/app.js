@@ -136,7 +136,11 @@
     $("#earth-canvas").hidden = true; $("#earth-labels").hidden = true; $("#base-pick").hidden = false;
     set("#globe-note", "Drag to turn, scroll to zoom. Imagery: NASA GIBS (VIIRS of the chosen day or Blue Marble).");
     $$("#base-pick button").forEach((b) => b.addEventListener("click", () => { EARTH.setBase(b.dataset.base);
-      for (const x of $$("#base-pick button")) x.setAttribute("aria-pressed", String(x === b)); }));
+      for (const x of $$("#base-pick button")) x.setAttribute("aria-pressed", String(x === b));
+      const lon = SEL ? SEL.lon : 0, sat = EARTH.irFor ? EARTH.irFor(lon) : "himawari";
+      set("#globe-note", b.dataset.base === "ir" ? (sat ? `Latest infrared from ${sat === "himawari" ? "Himawari (JMA)" : sat === "goes_west" ? "GOES-West (NOAA)" : "GOES-East (NOAA)"} via NASA GIBS. Cold (white) cloud tops are deep convection.`
+        : "No free geostationary infrared covers this longitude (the western Indian Ocean and Africa); showing Himawari's edge.")
+        : "Drag to turn, scroll to zoom. Imagery: NASA GIBS (VIIRS of the chosen day or Blue Marble)."); }));
   } else if (window.Earth) EARTH = window.Earth.create($("#earth-canvas"), earthOpts);
   window.__earth = EARTH;
   if (EARTH) {
@@ -164,7 +168,8 @@
     const P = s._pts;
     if (M.s !== s) {
       M.rot = [-d3.mean(P, (p) => p.lon), -d3.mean(P, (p) => p.lat)]; M.k = 1; M.s = s;
-      M.proj.rotate(M.rot).fitExtent([[40, 40], [w - 40, h - 40]], { type: "MultiPoint", coordinates: P.map((p) => [p.lon, p.lat]) });
+      const pts = P.map((p) => [p.lon, p.lat]).concat(FC && FC.mean && $("#mt-fc").checked && s.status === "active" ? FC.mean.map((p) => [p[2], p[1]]) : []);
+      M.proj.rotate(M.rot).fitExtent([[40, 40], [w - 40, h - 40]], { type: "MultiPoint", coordinates: pts });
       M.base = Math.min(M.proj.scale(), 5200);
     }
     M.proj.rotate(M.rot).scale(M.base * M.k).translate([w / 2, h / 2]);
@@ -176,6 +181,15 @@
     for (const o of ACTIVE) if (o !== s) M.others.append("path").attr("class", "m-other").attr("stroke", col(o.vmax_kt)).attr("d", pa({ type: "LineString", coordinates: o._pts.map((p) => [p.lon, p.lat]) }));
     M.track.selectAll("*").remove();
     for (let i = 1; i < P.length; i++) M.track.append("path").attr("class", "m-track").attr("stroke", col(P[i].kt)).attr("d", pa({ type: "LineString", coordinates: [[P[i - 1].lon, P[i - 1].lat], [P[i].lon, P[i].lat]] }));
+    M.others.selectAll(".m-fc, .m-past").remove();
+    if (FC && $("#mt-fc").checked && SEL.status === "active") {
+      for (const tr of Object.values(FC.members || {})) M.others.append("path").attr("class", "m-fc").attr("d", pa({ type: "LineString", coordinates: tr.map((p) => [p[2], p[1]]) }))
+        .attr("fill", "none").attr("stroke", "var(--ink-2)").attr("stroke-opacity", 0.35).attr("stroke-width", 1);
+      for (const [tr, dash, w] of [[FC.gfs, "2 4", 2], [FC.mean, "7 5", 3.5]]) if (tr) M.others.append("path").attr("class", "m-fc").attr("d", pa({ type: "LineString", coordinates: tr.map((p) => [p[2], p[1]]) }))
+        .attr("fill", "none").attr("stroke", "var(--ink)").attr("stroke-width", w).attr("stroke-dasharray", dash);
+    }
+    if (CX && $("#mt-past").checked) for (const a of CX.analogs || []) M.others.append("path").attr("class", "m-past").attr("d", pa({ type: "LineString", coordinates: a.track.map((p) => [p[1], p[0]]) }))
+      .attr("fill", "none").attr("stroke", "#b48cff").attr("stroke-opacity", 0.6).attr("stroke-width", 1.6).append("title").text(`${a.name} (${a.year}), peak ${a.peak} kt`);
     M.dots.selectAll("*").remove();
     for (const p of P) if (new Date(p.t).getUTCHours() % 12 === 0) { const xy = M.proj([p.lon, p.lat]); if (xy) M.dots.append("circle").attr("class", "m-dot").attr("r", 3).attr("cx", xy[0]).attr("cy", xy[1]); }
     M.mark.selectAll("*").remove(); M.markG = M.mark.append("g").style("color", "var(--ink)"); M.markG.html(symbolSVG(s._south, 13));
@@ -302,6 +316,8 @@
     files.append(el("div", { class: "actions" }, [
       el("a", { class: "tb wide", href: s.video, download: `${s.key}.mp4`, text: "Download the 3D video (MP4)" }),
       el("a", { class: "tb wide", href: s.poster, target: "_blank", rel: "noopener", text: "Open the last frame as an image" }),
+      s.download_track ? el("a", { class: "tb wide", href: s.download_track, download: "", text: "Download the official track (CSV)" }) : null,
+      s.download_hourly ? el("a", { class: "tb wide", href: s.download_hourly, download: "", text: "Download the hourly GFS diagnostics (CSV)" }) : null,
       el("a", { class: "tb wide", id: "wv-link", href: "#", target: "_blank", rel: "noopener", text: "Satellite view at this hour (NASA Worldview)" }), share,
       el("p", { class: "small muted", text: `Tracked since ${fmt(s._t0)}. Accumulated cyclone energy ${s._ace.toFixed(1)} × 10⁴ kt². ${isNaN(s._ws) ? "" : `3D video covers ${fmt(s._ws, false)} to ${fmt(s._we)}.`}` }),
     ]));
@@ -356,7 +372,7 @@
   }
   $$(".i-tabs button").forEach((b) => b.addEventListener("click", () => {
     for (const x of $$(".i-tabs button")) x.setAttribute("aria-selected", String(x === b));
-    $("#itab-summary").hidden = b.dataset.itab !== "summary"; $("#itab-files").hidden = b.dataset.itab !== "files";
+    for (const t of ["summary", "forecast", "history", "files"]) $(`#itab-${t}`).hidden = b.dataset.itab !== t;
   }));
   $("#pin").addEventListener("click", () => {
     if (!SEL) return; const i = PINS.indexOf(SEL.key); if (i >= 0) PINS.splice(i, 1); else PINS.unshift(SEL.key);
@@ -615,6 +631,87 @@
     if (STAGE === "impact") drawImpact();
   }
 
+  // ================================================================== FORECAST AND HISTORY
+  let FC = null, CX = null, CLIMO = null;
+  const AGENCY = { L: [["NHC (official)", "https://www.nhc.noaa.gov/"]], E: [["NHC (official)", "https://www.nhc.noaa.gov/"]], C: [["CPHC (official)", "https://www.nhc.noaa.gov/?cpac"]],
+    W: [["JMA, RSMC Tokyo (official)", "https://www.jma.go.jp/bosai/map.html#contents=typhoon&lang=en"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]],
+    A: [["IMD, RSMC New Delhi (official)", "https://rsmcnewdelhi.imd.gov.in/"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]],
+    B: [["IMD, RSMC New Delhi (official)", "https://rsmcnewdelhi.imd.gov.in/"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]],
+    S: [["Météo-France, RSMC La Réunion (official)", "https://meteofrance.re/fr/cyclone"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]],
+    U: [["Bureau of Meteorology (official)", "https://www.bom.gov.au/cyclone/"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]],
+    P: [["Fiji Meteorological Service, RSMC Nadi (official)", "https://www.met.gov.fj/"], ["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]] };
+  const getJSON = (u) => fetch(`${u}?v=${encodeURIComponent((DATA && DATA.generated) || "")}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  function loadExtras(s) {
+    FC = null; CX = null; fillForecast(); fillHistory();
+    if (s.forecast) getJSON(s.forecast).then((d) => { if (SEL !== s) return; FC = d; fillForecast(); M.s = null; if (STAGE === "map") drawMap(); if (EARTH && EARTH.setForecast) EARTH.setForecast(fcForGlobe()); }).catch(() => {});
+    else if (EARTH && EARTH.setForecast) EARTH.setForecast(null);
+    if (s.context) getJSON(s.context).then((d) => { if (SEL !== s) return; CX = d; fillHistory(); if (STAGE === "map") drawMap(); }).catch(() => {});
+  }
+  const fcForGlobe = () => FC && $("#mt-fc").checked ? { members: Object.values(FC.members || {}), mean: FC.mean, gfs: FC.gfs, color: col } : null;
+  function agencyLinks(s) {
+    return el("p", { class: "small" }, ["Official forecasts: ", ...(AGENCY[s.basin] || [["JTWC", "https://www.metoc.navy.mil/jtwc/jtwc.html"]])
+      .flatMap(([n, u], i) => [i ? " · " : "", el("a", { href: u, target: "_blank", rel: "noopener", text: n })])]);
+  }
+  function fillForecast() {
+    const box = $("#itab-forecast"); box.textContent = ""; if (!SEL) return;
+    if (SEL.status !== "active") { box.append(el("p", { class: "muted", text: "This storm has ended, so there is no forecast." })); return; }
+    if (!FC) { box.append(el("p", { class: "muted", text: SEL.forecast ? "Loading the forecast…" : "No ensemble forecast was found for this storm in today's model run." }), agencyLinks(SEL)); return; }
+    const t0 = toMs(FC.cycle), sp = new Map((FC.spread || []).map((x) => [x[0], x]));
+    box.append(el("p", {}, [`GEFS ensemble from the ${fmt(t0)} run: mean of ${FC.n_members} members, with the GFS for comparison. `,
+      el("strong", { text: "Model guidance, not an official forecast." })]));
+    const tb = el("table", { class: "fc-table" }); tb.append(el("tr", {}, ["Time", "Position (mean)", "Wind", "Spread", "GFS"].map((h) => el("th", { text: h }))));
+    for (const tau of [0, 24, 48, 72, 96, 120, 168, 240]) {
+      const m = (FC.mean || []).find((p) => p[0] === tau); if (!m) continue;
+      const g = (FC.gfs || []).find((p) => p[0] === tau), spr = sp.get(tau);
+      tb.append(el("tr", {}, [el("td", { text: tau ? `+${tau / 24} d` : "now" }), el("td", { text: ll(m[1], m[2]) }), el("td", { text: `${m[3]} kt` }),
+        el("td", { text: spr ? `±${spr[1]} km` : "" }), el("td", { text: g ? `${g[3]} kt` : "" })]));
+    }
+    box.append(tb, el("p", { class: "small muted", text: "Spread is the average distance of the members from the mean: it shows how uncertain the track is. Ensemble winds are usually too weak for strong storms at this resolution." }), agencyLinks(SEL));
+  }
+  function fillHistory() {
+    const box = $("#itab-history"); box.textContent = ""; if (!SEL) return;
+    if (!CX) { box.append(el("p", { class: "muted", text: SEL.context ? "Loading the history…" : "Historical context appears for active storms after the next daily update." })); return; }
+    if (!CX.n) { box.append(el("p", { text: `No storm of tropical-storm strength has passed within ${CX.radius_km} km of this position at this time of year since 1980. That makes it unusual.` })); return; }
+    box.append(el("p", { text: `Since 1980, ${CX.n} storms of tropical-storm strength passed within ${CX.radius_km} km of ${SEL.name}'s current position within ±${CX.days} days of today's date ` +
+      `(about ${CX.per_decade} per decade). ${CX.n_hurricane} of them reached 64 kt or more and ${CX.n_ri} intensified rapidly; their median peak was ${CX.median_peak} kt.` }),
+      el("p", { text: SEL.status === "active" ? `${SEL.name}'s peak so far (${SEL.peak_kt} kt) would rank ${CX.rank_peak} of ${CX.n + 1} among them.` : "" }),
+      el("p", { class: "small muted", text: "Closest past storms (shown on the track map with “Past storms nearby”):" }));
+    const ul = el("ul", { class: "an-list" });
+    for (const a of CX.analogs) ul.append(el("li", {}, [`${a.name} (${a.year})`, el("span", { text: `peak ${a.peak} kt${a.ri ? ", RI" : ""}, passed ${a.closest_km} km away` })]));
+    box.append(ul, el("p", { class: "small muted", text: "From IBTrACS v04r01 (NOAA NCEI), 1-minute winds." }));
+  }
+  $("#mt-fc").addEventListener("change", () => { if (STAGE === "map") drawMap(); if (EARTH && EARTH.setForecast) EARTH.setForecast(fcForGlobe()); });
+  $("#mt-past").addEventListener("change", () => { if (STAGE === "map") drawMap(); });
+  function loadClimo() {
+    getJSON("data/climo.json").then((d) => {
+      CLIMO = d; const c = d.climate || {}, line = $("#climate-line"), parts = [];
+      if (c.enso) parts.push(["ENSO ", el("b", { text: c.enso.phase }), ` (ONI ${c.enso.value > 0 ? "+" : ""}${c.enso.value})`]);
+      if (c.iod) parts.push(["IOD ", el("b", { text: c.iod.phase }), ` (${c.iod.value > 0 ? "+" : ""}${c.iod.value})`]);
+      if (c.mjo) parts.push(["MJO ", el("b", { text: c.mjo.active ? `phase ${c.mjo.phase}` : "weak" })]);
+      if (parts.length) { line.hidden = false; line.textContent = ""; parts.forEach((p, i) => { if (i) line.append(" · "); line.append(...p); }); }
+      if (EARTH && EARTH.setIR && d.satellite && Object.keys(d.satellite).length) { $("#base-ir").hidden = false; EARTH.setIR(d.satellite); }
+    }).catch(() => {});
+  }
+  function seasonExtras() {
+    const c = CLIMO && CLIMO.climate, sv = CLIMO && CLIMO.season;
+    if (c && Object.keys(c).length) {
+      const b = $("#s-climate-body"); b.textContent = ""; $("#s-climate").hidden = false;
+      if (c.enso) b.append(el("p", { text: `ENSO: ${c.enso.phase} (Oceanic Niño Index ${c.enso.value}, ${c.enso.season}; ${c.enso.source}). El Niño tends to shift West Pacific storms east and suppress Atlantic activity; La Niña the opposite.` }));
+      if (c.iod) b.append(el("p", { text: `Indian Ocean Dipole: ${c.iod.phase} (DMI ${c.iod.value}, ${c.iod.month}; ${c.iod.source}).` }));
+      if (c.mjo) b.append(el("p", { text: `MJO: ${c.mjo.active ? `active, phase ${c.mjo.phase}` : "weak"} (amplitude ${c.mjo.amplitude}, ${c.mjo.date}; ${c.mjo.source}). Phases 2–4 favour storms in the Indian Ocean, 5–7 in the West Pacific and Australian region, 8 and 1 in the Atlantic and East Pacific.` }));
+    }
+    if (sv && Object.keys(sv).length) {
+      const b = $("#s-normal-body"); b.textContent = ""; $("#s-normal").hidden = false;
+      const t = el("table", { class: "norm-table" }); t.append(el("tr", {}, ["Basin", "Named storms", "Normal", "ACE", "Normal"].map((h) => el("th", { text: h }))));
+      for (const v of Object.values(sv)) {
+        const cls = (x, n) => (n > 0 && x > 1.25 * n ? "up" : n > 0 && x < 0.75 * n ? "down" : "");
+        t.append(el("tr", {}, [el("td", { text: `${v.name} (${v.season})` }), el("td", { class: cls(v.named, v.named_normal), text: v.named }), el("td", { text: v.named_normal }),
+          el("td", { class: cls(v.ace, v.ace_normal), text: v.ace }), el("td", { text: v.ace_normal })]));
+      }
+      b.append(t, el("p", { class: "small muted", text: `To ${Object.values(sv)[0].to}, from IBTrACS (1-minute winds); 1991–2020 averages to the same date. IBTrACS lags real time by a few days.` }));
+    }
+  }
+
   // ================================================================== CENTRAL TIME
   function setTime(t, src) {
     if (!SEL || isNaN(t)) return;
@@ -682,7 +779,7 @@
     const keep = opts.keepTime && !isNaN(T) && T >= s._t0 && T <= s._t1;
     pause(); SEL = s;
     video.poster = s.poster; video.src = s.video; video.load(); video.playbackRate = +$("#t-speed").value;
-    globeStorms(); fillInspector(); loadEnv(s); loadImpact(s); drawTimeline(); drawSide();
+    globeStorms(); fillInspector(); loadEnv(s); loadImpact(s); loadExtras(s); drawTimeline(); drawSide();
     M.s = null; if (STAGE === "map") drawMap();
     const t = keep ? T : s._t1; setTime(t);
     if (EARTH) { const p = at(s, t); if (p) EARTH.focus(p.lat, p.lon, opts.instant ? 1 : 1300); }
@@ -807,11 +904,11 @@
 
   // ================================================================== DRAWERS
   const dlg = $("#dlg");
-  const TITLES = { season: "Season at a glance", archive: "Archive", guide: "How to read a 3D video", method: "Impact method: hazard, exposure and vulnerability", about: "About" };
+  const TITLES = { season: "Season at a glance", archive: "Archive", guide: "How to read a 3D video", method: "Impact method: hazard, exposure and vulnerability", glossary: "Glossary", about: "About" };
   function openDrawer(name) {
     for (const k of Object.keys(TITLES)) $(`#d-${k}`).hidden = k !== name;
     set("#dlg-title", name === "season" ? `${DATA && DATA.generated ? new Date(toMs(DATA.generated)).getUTCFullYear() : ""} season at a glance` : TITLES[name]);
-    if (name === "season") drawSeason(); if (name === "archive") drawArchive();
+    if (name === "season") { drawSeason(); seasonExtras(); } if (name === "archive") drawArchive();
     if (name === "guide" && SEL) $("#guide-img").src = SEL.poster;
     pause(); if (!dlg.open) dlg.showModal();
   }
@@ -894,7 +991,7 @@
       for (const b of [...new Set(ARCH.map((s) => s.basin_name))].sort()) $("#f-basin").append(el("option", { value: b, text: b }));
       set("#generated", d.generated ? `Dashboard rebuilt ${fmt(toMs(d.generated))}.` : "");
       const basins = new Set(ALL.map((s) => s.basin_name)); if (ALL.length) set("#site-stats", `This site holds ${ALL.length} storm${ALL.length > 1 ? "s" : ""} from ${basins.size} basin${basins.size > 1 ? "s" : ""}.`);
-      drawSide(); setupCompare();
+      drawSide(); setupCompare(); loadClimo();
       const hs = new URLSearchParams(location.hash.slice(1));
       const first = (hs.get("storm") && ALL.find((s) => s.key === hs.get("storm"))) || ACTIVE[0] || ARCH.slice().sort((a, b) => toMs(b.last_seen) - toMs(a.last_seen))[0];
       const view = hs.get("view");

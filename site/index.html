@@ -33,6 +33,7 @@
       <button type="button" data-open="archive">Archive</button>
       <button type="button" data-open="guide">Guide</button>
       <button type="button" data-open="method">Method</button>
+      <button type="button" data-open="glossary">Glossary</button>
       <button type="button" data-open="about">About</button>
     </nav>
   </header>
@@ -42,6 +43,7 @@
     <div class="side-head">
       <h2 id="headline">Storms</h2>
       <p id="status" class="muted small"></p>
+      <p id="climate-line" class="climate-line small" hidden></p>
     </div>
     <div class="filters" id="basins" role="group" aria-label="Filter by basin"></div>
     <ol class="slist" id="active-list" aria-label="Active storms"></ol>
@@ -66,6 +68,7 @@
       <div class="base-pick" id="base-pick" role="group" aria-label="Globe imagery" hidden>
         <button type="button" class="tb wide" data-base="viirs" aria-pressed="true">Satellite of the day</button>
         <button type="button" class="tb wide" data-base="blue" aria-pressed="false">Blue Marble</button>
+        <button type="button" class="tb wide" data-base="ir" aria-pressed="false" id="base-ir" hidden>Infrared now</button>
       </div>
       <div id="earth-labels" class="earth-labels"></div>
       <div class="pane-tools">
@@ -83,6 +86,10 @@
     <div class="pane" id="pane-map" hidden>
       <svg id="map" role="img" aria-label="Regional map of the storm track"></svg>
       <div class="pane-tools"><button type="button" id="m-in" class="tb" aria-label="Zoom in">+</button><button type="button" id="m-out" class="tb" aria-label="Zoom out">−</button></div>
+      <div class="map-toggles" role="group" aria-label="Map layers">
+        <label><input type="checkbox" id="mt-fc" checked> Forecast (GEFS)</label>
+        <label><input type="checkbox" id="mt-past"> Past storms nearby</label>
+      </div>
     </div>
     <div class="pane cmp" id="pane-compare" hidden>
       <div class="cmp-bar">
@@ -168,9 +175,13 @@
     </div>
     <div class="i-tabs" role="tablist" aria-label="More about this storm">
       <button role="tab" data-itab="summary" aria-selected="true">Summary</button>
-      <button role="tab" data-itab="files" aria-selected="false">Files and links</button>
+      <button role="tab" data-itab="forecast" aria-selected="false">Forecast</button>
+      <button role="tab" data-itab="history" aria-selected="false">History</button>
+      <button role="tab" data-itab="files" aria-selected="false">Files</button>
     </div>
     <div class="i-pane" id="itab-summary"></div>
+    <div class="i-pane" id="itab-forecast" hidden></div>
+    <div class="i-pane" id="itab-history" hidden></div>
     <div class="i-pane" id="itab-files" hidden></div>
   </aside>
 </div>
@@ -179,6 +190,8 @@
 <dialog id="dlg" class="drawer" aria-labelledby="dlg-title">
   <div class="d-head"><h2 id="dlg-title"></h2><form method="dialog"><button class="tb wide" aria-label="Close">Close</button></form></div>
   <div class="d-body" id="d-season" hidden>
+    <div class="card" id="s-climate" hidden><h3>Climate state</h3><div id="s-climate-body"></div></div>
+    <div class="card" id="s-normal" hidden><h3>This season compared with 1991–2020</h3><div id="s-normal-body"></div></div>
     <div class="d-grid">
       <div class="card"><h3>Accumulated cyclone energy by basin</h3><div id="s-ace"></div></div>
       <div class="card"><h3>Storms by peak intensity</h3><div id="s-cat"></div></div>
@@ -239,6 +252,22 @@
       <p class="small muted">For comparison, the Global Disaster Alert and Coordination System (GDACS) publishes exposed-population estimates for every storm.</p>
     </div>
   </div>
+  <div class="d-body" id="d-glossary" hidden>
+    <dl class="glossary">
+      <dt>Rapid intensification (RI)</dt><dd>An increase of at least 30 kt in the maximum sustained wind within 24 hours. Most of the strongest storms go through it, and it is hard to forecast.</dd>
+      <dt>Maximum sustained wind</dt><dd>The highest wind averaged over 1 minute (US agencies, JTWC), 3 minutes (IMD) or 10 minutes (most other agencies). The same storm therefore has different numbers in different bulletins; 10-minute winds are roughly 0.93 × 1-minute winds.</dd>
+      <dt>IMD classes</dt><dd>India Meteorological Department scale for the North Indian Ocean: Depression 17–27 kt, Deep Depression 28–33, Cyclonic Storm 34–47, Severe 48–63, Very Severe 64–89, Extremely Severe 90–119, Super Cyclonic Storm 120 kt or more (3-minute winds).</dd>
+      <dt>Saffir–Simpson categories</dt><dd>Category 1 is 64–82 kt, 2 is 83–95, 3 is 96–112, 4 is 113–136 and 5 is 137 kt or more (1-minute winds). Categories 3–5 are called major.</dd>
+      <dt>Invest</dt><dd>An area of disturbed weather that an agency is investigating (numbered 90–99). It receives a storm number when it becomes a tropical depression in that agency's analysis.</dd>
+      <dt>Vertical wind shear</dt><dd>The change of the horizontal wind with height, here between 850 and 200 hPa (deep layer) or 850 and 500 hPa. Shear tilts the vortex and brings dry air into the core; under about 10 m/s it rarely stops intensification.</dd>
+      <dt>Vortex tilt</dt><dd>The horizontal distance between the circulation centres at 850 and 500 hPa. A vertically aligned vortex (small tilt) is a common precursor of rapid intensification.</dd>
+      <dt>Radius of maximum wind (RMW)</dt><dd>The distance from the centre to the strongest winds. It usually contracts as a storm intensifies.</dd>
+      <dt>Accumulated cyclone energy (ACE)</dt><dd>The sum of the squared maximum winds (kt) every 6 hours while a storm is at least tropical-storm strength, divided by 10,000. It combines how strong, how long-lived and how many storms there were.</dd>
+      <dt>Ensemble forecast</dt><dd>The same model run many times from slightly different starting states. The spread of the tracks shows how uncertain the forecast is; the ensemble mean is often more accurate than a single run.</dd>
+      <dt>ENSO, IOD, MJO</dt><dd>El Niño–Southern Oscillation (Pacific), Indian Ocean Dipole and Madden–Julian Oscillation: large-scale patterns that shift where and how often tropical cyclones form.</dd>
+      <dt>Storm surge</dt><dd>The rise of sea level pushed onshore by the storm's winds and low pressure. In the Bay of Bengal it causes most cyclone deaths.</dd>
+    </dl>
+  </div>
   <div class="d-body" id="d-about" hidden>
     <p class="about-name" id="about-name"></p>
     <p class="about-role" id="about-role"></p>
@@ -250,8 +279,9 @@
       <div><h3>Memberships</h3><ul id="about-members"></ul></div>
     </div>
     <p class="small muted" id="site-stats"></p>
-    <p class="small muted">Data: NCEP GFS 0.25° analyses and NCEP TCVitals (operational positions and intensities from NHC, CPHC, JTWC and other centres). Population: GHSL GHS-POP 2025 (EU JRC). Economic and vulnerability indicators: World Bank. Earth imagery: NASA Blue Marble and Black Marble. Coastlines: Natural Earth. Rendering: three.js and d3. Research visualisation, not an official forecast.</p>
+    <p class="small muted">Data: NCEP GFS 0.25° analyses and NCEP TCVitals (operational positions and intensities from NHC, CPHC, JTWC and other centres). Forecast tracks: NCEP GEFS and GFS cyclone tracker. History: IBTrACS v04r01 (NOAA NCEI). Climate indices: NOAA CPC, NOAA PSL, Australian Bureau of Meteorology. Population: GHSL GHS-POP 2025 (EU JRC). Economic and vulnerability indicators: World Bank. Earth imagery: NASA Blue Marble and Black Marble. Coastlines: Natural Earth. Rendering: three.js and d3. Research visualisation, not an official forecast.</p>
     <p class="small muted" id="generated"></p>
+    <p class="small"><a href="feed.xml">RSS feed of active storms</a>: follow daily updates in any feed reader, no account needed.</p>
   </div>
 </dialog>
 

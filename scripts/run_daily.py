@@ -17,6 +17,9 @@ sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import storms as S
 import narrative as N
 import impact as I
+import forecast as F
+import context as C
+import extras as X
 import tc3d.render as R
 
 
@@ -170,6 +173,16 @@ def main():
     print(f"  active storms: {[s['key'] for s in active]}")
     print(f"  ended in the last 8 days: {[s['key'] for s in ended]}")
     active = sorted(active, key=lambda s: -s["vmax_kt"])[:a.max_storms]
+    try: GUIDE = F.fetch_guidance(latest)                                  # GEFS + GFS forecast tracks
+    except Exception: traceback.print_exc(); GUIDE = None
+    try:
+        IB = C.load(os.path.expanduser(os.environ.get("TC_IBTRACS", "~/.cache/tc-ibtracs"))); IBS = C.storm_summaries(IB)
+    except Exception:
+        traceback.print_exc(); IB = IBS = None
+    def write_json(sub, key, obj):
+        path = f"data/{sub}/{key}.json"; os.makedirs(os.path.join(a.public, "data", sub), exist_ok=True)
+        json.dump(obj, open(os.path.join(a.public, path), "w"), separators=(",", ":"), default=lambda o: o.item() if hasattr(o, "item") else str(o))
+        return path
 
     def entry(st, info, desc, status):
         return dict(key=st["key"], sid=st["sid"], year=st["year"], name=st["name"], label=st["label"],
@@ -229,6 +242,19 @@ def main():
             imp_fields = dict(impact=prev[st["key"]]["impact"], impact_summary=prev[st["key"]].get("impact_summary"))
         print(f"  done in {(time.time() - t0) / 60:.1f} min")
         e = entry(st, info, desc, status); e.update(imp_fields)
+        if status == "active":
+            try:
+                fc = F.for_storm(GUIDE, st["sid"])
+                if fc:
+                    e["forecast"] = write_json("forecast", st["key"], fc); e["forecast_cycle"] = fc["cycle"]
+                    print(f"  forecast: {fc['n_members']} ensemble members, cycle {fc['cycle']}")
+            except Exception:
+                traceback.print_exc()
+            try:
+                cx = C.context_for(dict(lat=st["lat"], lon=st["lon"], last_seen=st["last_seen"], peak_kt=st["peak_kt"]), IB, IBS)
+                if cx: e["context"] = write_json("context", st["key"], cx); print(f"  history: {cx['n']} past storms passed nearby")
+            except Exception:
+                traceback.print_exc()
         return e
 
     out = []
@@ -297,6 +323,15 @@ def main():
             if ok: hero = prev_hero
         except Exception:
             pass
+    try: X.write_downloads(out, a.public)
+    except Exception: traceback.print_exc()
+    try: X.write_feed(out, a.public, a.site_url or "")
+    except Exception: traceback.print_exc()
+    extra = {}
+    for k, fn in (("climate", X.climate_state), ("satellite", X.satellite_layers), ("season", lambda: C.season_vs_normal(IB))):
+        try: extra[k] = fn()
+        except Exception: traceback.print_exc()
+    json.dump(extra, open(os.path.join(a.public, "data", "climo.json"), "w"), default=lambda o: o.item() if hasattr(o, "item") else str(o))
     json.dump(dict(hero=hero, generated=pd.Timestamp.now("UTC").strftime("%Y-%m-%dT%H:%MZ"),
                    latest_cycle=str(latest) if latest is not None else None, storms=out),
               open(os.path.join(a.public, "data", "storms.json"), "w"), indent=1)

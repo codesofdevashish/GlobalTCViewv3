@@ -6,6 +6,9 @@
 (() => {
   "use strict";
   const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi";
+  const GIBS_NRT = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/nrt/wmts.cgi";
+  const irFor = (lon) => { const l = ((lon + 540) % 360) - 180;                  // which geostationary satellite sees this longitude
+    return l >= 70 || l < -170 ? "himawari" : l < -105 ? "goes_west" : l < -15 ? "goes_east" : null; };
   const KT = 1.943844;
 
   function symbolCanvas(color) {
@@ -66,7 +69,28 @@
     }
     const yesterday = Date.now() - 864e5;                  // yesterday's global composite is complete
     setViirsDay(yesterday);
-    function setBase(which) { base = which; if (viirs) viirs.show = which === "viirs"; blue.show = true; }
+    let irCfg = null, irLayer = null, irKey = null, lastLon = 0;
+    function showIR() {
+      const key = irCfg ? (irFor(lastLon) || "himawari") : null, cfg = key && irCfg[key];
+      if (irLayer && irKey !== key) { layers.remove(irLayer, true); irLayer = null; }
+      if (cfg && !irLayer) {
+        irLayer = layers.addImageryProvider(new C.WebMapTileServiceImageryProvider({ url: GIBS_NRT, layer: cfg.layer, style: "default", format: "image/jpeg",
+          tileMatrixSetID: cfg.tms, maximumLevel: cfg.max_level || 7, tilingScheme: new C.WebMercatorTilingScheme(), credit: new C.Credit("Infrared: NASA GIBS (JMA Himawari, NOAA GOES)") }));
+        irLayer.alpha = 0.92; irLayer.nightAlpha = 0.92; irKey = key;
+      }
+      if (irLayer) { irLayer.show = base === "ir"; layers.raiseToTop(irLayer); }
+    }
+    function setBase(which) { base = which; if (viirs) viirs.show = which === "viirs"; blue.show = true; showIR(); }
+    function setIR(cfg) { irCfg = cfg; if (base === "ir") showIR(); }
+    let fcEnts = [];
+    function setForecast(fc) {
+      for (const e of fcEnts) viewer.entities.remove(e); fcEnts = []; if (!fc) return;
+      const line = (tr, width, mat) => { if (!tr || tr.length < 2) return;
+        fcEnts.push(viewer.entities.add({ polyline: { positions: C.Cartesian3.fromDegreesArray(tr.flatMap((p) => [p[2], p[1]])), width, arcType: C.ArcType.GEODESIC, material: mat } })); };
+      for (const m of fc.members || []) line(m, 1.2, C.Color.WHITE.withAlpha(0.32));
+      line(fc.gfs, 2, new C.PolylineDashMaterialProperty({ color: C.Color.fromCssColorString("#ffd27a"), dashLength: 10 }));
+      line(fc.mean, 3.5, new C.PolylineDashMaterialProperty({ color: C.Color.WHITE, dashLength: 16 }));
+    }
 
     // ---- storms
     const sym = new Map(), ring = ringCanvas();
@@ -130,11 +154,12 @@
       const h = Math.max(4.5e6, Math.min(scene.camera.positionCartographic.height || 1.6e7, 1.6e7));
       const dest = C.Cartesian3.fromDegrees(lon, lat, ms <= 1 ? 1.1e7 : h);
       if (!home) home = [lat, lon];
+      lastLon = lon; if (base === "ir") showIR();
       if (ms <= 1) scene.camera.setView({ destination: dest }); else scene.camera.flyTo({ destination: dest, duration: ms / 1000 });
     }
     const zoom = (f) => { const h = scene.camera.positionCartographic.height; scene.camera.zoomIn(h * (1 - 1 / f)); };
     return {
-      setStorms, focus, setTime, setBase,
+      setStorms, focus, setTime, setBase, setIR, setForecast, irFor,
       zoomIn: () => zoom(1.6), zoomOut: () => scene.camera.zoomOut(scene.camera.positionCartographic.height * 0.6),
       setSpin: (on) => { spin = !!on; }, reset: () => { if (home) focus(home[0], home[1], 1200); },
       hd: true, viewer,
